@@ -1,0 +1,243 @@
+--Creacion de procedimiento
+CREATE OR REPLACE PROCEDURE SP_GRABA_RESUMEN_MES
+
+(p_anno_mes_proc VARCHAR2,
+
+ p_profesion VARCHAR2,
+
+ p_total_asesoria NUMBER,
+
+ p_monto_hon NUMBER,
+
+ p_monto_tot_mov NUMBER,
+
+ p_monto_asig_tpcont NUMBER,
+
+ p_monto_asig_prof NUMBER, 
+
+ p_monto_tota_sig NUMBER) IS
+
+BEGIN
+
+ INSERT INTO resumen_mes_profesion
+
+ VALUES(p_anno_mes_proc,p_profesion,p_total_asesoria,
+
+     p_monto_hon,p_monto_tot_mov,p_monto_asig_tpcont,
+
+     p_monto_asig_prof,p_monto_tota_sig);
+
+END;
+
+--Creacion otro procedimiento
+CREATE OR REPLACE PROCEDURE SP_CALCULA_ASIG_PROF(p_fecha_proc VARCHAR2,
+
+p_limite_asig NUMBER) IS
+
+CURSOR cur_profesion IS
+
+  SELECT cod_profesion, nombre_profesion
+
+  FROM profesion
+
+  ORDER BY nombre_profesion;
+
+  
+
+CURSOR cur_profesional(p_cod_profesion NUMBER) IS
+
+  SELECT TO_CHAR(p.numrun_prof,'99G999G999') || p.dvrun_prof run,
+
+     p.nombre || ' ' || p.appaterno nombre,
+
+     p.cod_comuna, p.cod_tpcontrato,
+
+     p.cod_profesion,p.sueldo,
+
+     COUNT(a.numrun_prof) cantidad_asesorias,
+
+     SUM(a.honorario) monto_asesorias
+
+   FROM profesional p JOIN asesoria a
+
+   ON p.numrun_prof=a.numrun_prof
+
+   WHERE TO_CHAR(a.inicio_asesoria,'YYYYMM')=p_fecha_proc
+
+   AND p.cod_profesion=p_cod_profesion
+
+   GROUP BY p.numrun_prof, p.dvrun_prof,p.nombre, p.appaterno,
+
+   p.cod_comuna, p.cod_tpcontrato,p.cod_profesion,p.sueldo
+
+   ORDER BY p.appaterno, p.nombre;
+
+TYPE t_varray_porc_mov IS VARRAY(5) OF NUMBER;
+
+varray_porc_mov t_varray_porc_mov;
+
+asignacion_limite EXCEPTION;
+
+v_asig_mov_extra NUMBER(8);
+
+v_asignaciones NUMBER(8);
+
+-- VARIABLES TOTALIZADORAS POR PROFESION
+
+v_tot_asesorias NUMBER(10);
+
+v_tot_honorarios NUMBER(10);
+
+v_tot_asig_mov NUMBER(10);
+
+v_tot_asig_tpcont NUMBER(10);
+
+v_tot_asig_prof NUMBER(10);
+
+v_tot_asignaciones NUMBER(10);
+
+BEGIN
+
+ EXECUTE IMMEDIATE('TRUNCATE TABLE ERRORES_PROCESO');
+
+ EXECUTE IMMEDIATE('TRUNCATE TABLE DETALLE_ASIGNACION_MES');
+
+ EXECUTE IMMEDIATE('TRUNCATE TABLE RESUMEN_MES_PROFESION');  
+
+ varray_porc_mov:=t_varray_porc_mov(0.02,0.04,0.05,0.07,0.09);
+
+ PKG_CALCULO_ASIG_PROF.v_sec_error:=0;  
+
+ -- CURSOR QUE LEE LAS PROFESIONES
+
+ FOR reg_profesion IN cur_profesion LOOP
+
+   v_tot_asesorias:=0;
+
+   v_tot_honorarios:=0;
+
+   v_tot_asig_mov:=0;
+
+   v_tot_asig_tpcont:=0;
+
+   v_tot_asig_prof:=0;
+
+   v_tot_asignaciones:=0;
+
+   FOR reg_profesional IN cur_profesional(reg_profesion.cod_profesion) LOOP
+
+   v_asig_mov_extra:=0;
+
+   IF reg_profesional.cod_comuna=82 AND reg_profesional.monto_asesorias < 350000 THEN
+
+     v_asig_mov_extra:=ROUND(reg_profesional.monto_asesorias*varray_porc_mov(1));
+
+   ELSIF reg_profesional.cod_comuna=83 THEN
+
+     v_asig_mov_extra:=ROUND(reg_profesional.monto_asesorias*varray_porc_mov(2));
+
+   ELSIF reg_profesional.cod_comuna=85 AND reg_profesional.monto_asesorias < 400000 THEN
+
+     v_asig_mov_extra:=ROUND(reg_profesional.monto_asesorias*varray_porc_mov(3));
+
+   ELSIF reg_profesional.cod_comuna=86 AND reg_profesional.monto_asesorias < 800000 THEN
+
+     v_asig_mov_extra:=ROUND(reg_profesional.monto_asesorias*varray_porc_mov(4));
+
+   ELSIF reg_profesional.cod_comuna=89 AND reg_profesional.monto_asesorias < 680000 THEN
+
+     v_asig_mov_extra:=ROUND(reg_profesional.monto_asesorias*varray_porc_mov(5));
+
+   END IF;
+
+   
+
+   -- Calcula asignación especial profesional
+
+   PKG_CALCULO_ASIG_PROF.v_asig_prof:=ROUND(reg_profesional.sueldo*
+
+   FN_OBT_PORC_ASIG_PROF(reg_profesional.cod_profesion,
+
+              reg_profesional.run));
+
+               
+
+   -- Calcula asignación por tipo de contrato
+
+   PKG_CALCULO_ASIG_PROF.v_asig_tpcont:=ROUND(reg_profesional.monto_asesorias*
+
+      PKG_CALCULO_ASIG_PROF.F_OBT_PORC_ASIG_TPCONT(reg_profesional.cod_tpcontrato));
+
+   -- Calcula el monto total de asignaciones
+
+   v_asignaciones:=v_asig_mov_extra+PKG_CALCULO_ASIG_PROF.v_asig_prof+
+
+           PKG_CALCULO_ASIG_PROF.v_asig_tpcont;
+
+           
+
+  /* Control de la excepción predefina */
+
+  BEGIN
+
+    IF v_asignaciones > p_limite_asig THEN
+
+     RAISE asignacion_limite;
+
+    END IF;   
+
+  EXCEPTION 
+
+  WHEN asignacion_limite THEN
+
+     PKG_CALCULO_ASIG_PROF.P_GRABAR_ERROR('Error, el profesional con run ' || reg_profesional.run || ' supera el monto l´mite de asignaciones', 
+
+     'Se reemplazó en monto total de la asignaciones calculada de ' || v_asignaciones ||
+
+     ' por el monto de ' || p_limite_asig);
+
+  v_asignaciones:=p_limite_asig;
+
+  END;
+
+  INSERT INTO detalle_asignacion_mes
+
+  VALUES(SUBSTR(p_fecha_proc,-2), SUBSTR(p_fecha_proc,1,4),reg_profesional.run,
+
+  reg_profesional.nombre,reg_profesion.nombre_profesion,
+
+  reg_profesional.cantidad_asesorias,reg_profesional.monto_asesorias,
+
+  v_asig_mov_extra,PKG_CALCULO_ASIG_PROF.v_asig_tpcont,
+
+  PKG_CALCULO_ASIG_PROF.v_asig_prof,v_asignaciones);
+
+  /* SE REALIZA LA SUMATORIA A LAS VARIABLES TOTALIZADORAS
+
+  PARA INSERTAR EN LA TABLA RESUMEN */
+
+  v_tot_asesorias:=v_tot_asesorias+reg_profesional.cantidad_asesorias;
+
+  v_tot_honorarios:=v_tot_honorarios+reg_profesional.monto_asesorias;
+
+  v_tot_asig_mov:=v_tot_asig_mov+v_asig_mov_extra;
+
+  v_tot_asig_tpcont:=v_tot_asig_tpcont+PKG_CALCULO_ASIG_PROF.v_asig_tpcont;
+
+  v_tot_asig_prof:=v_tot_asig_prof+ PKG_CALCULO_ASIG_PROF.v_asig_prof;
+
+  v_tot_asignaciones:=v_tot_asignaciones+v_asignaciones;   
+
+ END LOOP;
+
+   SP_GRABA_RESUMEN_MES(p_fecha_proc,reg_profesion.nombre_profesion,
+
+   v_tot_asesorias,v_tot_honorarios,v_tot_asig_mov,v_tot_asig_tpcont,
+
+   v_tot_asig_prof,v_tot_asignaciones);
+
+END LOOP;
+
+COMMIT;
+
+END;

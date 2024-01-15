@@ -1,0 +1,83 @@
+--ESTUDIAR ESTE TAMBIEN:
+
+var b_porc_1 number
+var b_porc_2 number
+var b_porc_3 number
+exec :b_porc_1 := '&primer_porcentaje';
+exec :b_porc_2 := '&segundo_porcentaje';
+exec :b_porc_3 := '&tercer_porcentaje';
+
+DECLARE
+    --Creo el cursor(el cursor ya me crea por defecto un registro)
+    CURSOR cursor_dato_empleado IS
+    SELECT
+        round(months_between(
+            sysdate, hire_date
+        ) / 12)         annios_emp,
+        employee_id     id_emp,
+        ltrim(e.first_name
+              || ' '
+              || e.last_name) nombre_completo,
+        e.salary        sueldo
+    FROM
+        employees e
+    ORDER BY
+        e.employee_id ASC;
+        
+    --Creo el Varray
+    TYPE tp_varray_porc_aumento IS
+        VARRAY(20) OF NUMBER;
+    varray_porc_aumento tp_varray_porc_aumento;
+BEGIN
+    varray_porc_aumento := tp_varray_porc_aumento(
+                                                 :b_porc_1,
+                                                 :b_porc_2,
+                                                 :b_porc_3
+                           );
+        
+    
+
+    dbms_output.put_line('EMPLEADOS');
+    dbms_output.put_line('-------------------');
+    FOR reg_emp IN cursor_dato_empleado LOOP
+        --siempre asociar al alias ejeemplo: registro.alias
+        dbms_output.put_line('Nombre: ' || reg_emp.nombre_completo);
+        dbms_output.put_line('ID: ' || reg_emp.id_emp);
+        dbms_output.put_line('Sueldo: '
+                             || to_char(
+                                       reg_emp.sueldo,
+                                       'FML9G999G999'
+                                ));
+        DBMS_OUTPUT.PUT_LINE('Años trabajando: '||reg_emp.annios_emp||' '||'años');
+        
+        --Condicion de años
+        if reg_emp.annios_emp >= 10 and reg_emp.annios_emp <= 15 then
+        dbms_output.put_line('Sueldo +'
+                             || varray_porc_aumento(1)
+                             || '%: '
+                             || to_char(
+                                       reg_emp.sueldo +(reg_emp.sueldo * varray_porc_aumento(1)/100),
+                                       'FML9G999G999'
+                                ));
+        
+                                
+        elsif reg_emp.annios_emp >= 16 and reg_emp.annios_emp <= 20 then
+        dbms_output.put_line('Sueldo +'
+                             || varray_porc_aumento(2)
+                             || '%: '
+                             || to_char(
+                                       reg_emp.sueldo +(reg_emp.sueldo * varray_porc_aumento(2)/100),
+                                       'FML9G999G999'
+                                ));
+        elsif reg_emp.annios_emp >= 21 and reg_emp.annios_emp <= 30 then
+        dbms_output.put_line('Sueldo +'
+                             || varray_porc_aumento(3)
+                             || '%: '
+                             || to_char(
+                                       reg_emp.sueldo +(reg_emp.sueldo * varray_porc_aumento(2)/100),
+                                       'FML9G999G999'
+                                ));
+        end if;
+        dbms_output.put_line(' ');
+    END LOOP;
+END;

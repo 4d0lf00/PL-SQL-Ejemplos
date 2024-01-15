@@ -1,0 +1,181 @@
+--CREACION DEL PACKAGE
+CREATE OR REPLACE PACKAGE pkg_puntaje_pasantia AS
+  -- Variables 
+    v_puntaje_zona VARCHAR2(100);
+    v_puntaje_insti VARCHAR2(100);
+
+  -- Función para obtener el puntaje de la zona rural
+    FUNCTION fn_obtener_puntaje_zona (
+        p_zona VARCHAR2
+    ) RETURN NUMBER;
+
+  -- Función para obtener el puntaje por el país de la institución
+    FUNCTION fn_obtener_puntaje_pais (
+        p_pais VARCHAR2
+    ) RETURN NUMBER;
+
+END pkg_puntaje_pasantia;
+/
+
+--CREACION DEL BODY PACKAGE
+CREATE OR REPLACE PACKAGE BODY puntaje_pasantia AS
+
+    FUNCTION fn_obtener_puntaje_zona (
+        p_zona VARCHAR2
+    ) RETURN NUMBER IS
+        v_puntaje_zona NUMBER;
+    BEGIN
+    -- Aquí iría la lógica para obtener el puntaje de la zona rural
+        SELECT
+            ptje_zrural
+        INTO v_puntaje_zona
+        FROM
+            ptje_zona_rural
+        WHERE
+            ptje_zrural = p_zona;
+
+        RETURN v_puntaje_zona;
+    END obtener_puntaje_zona;
+
+    FUNCTION fn_obtener_puntaje_pais (
+        p_pais VARCHAR2
+    ) RETURN NUMBER IS
+        v_puntaje_insti NUMBER;
+    BEGIN
+    -- Aquí iría la lógica para obtener el puntaje del país de la institución
+        SELECT
+            ptje_pais
+        INTO v_puntaje_insti
+        FROM
+            ptje_pais_postula
+        WHERE
+            cod_pais = p_pais;
+
+        RETURN v_puntaje_insti;
+    END obtener_puntaje_pais;
+
+END puntaje_pasantia;
+
+--CREACION DE FUNCIONES ALMACENADAS
+    FUNCTION fn_obtener_puntaje_pueblo (
+        p_zona VARCHAR2
+    ) RETURN NUMBER IS
+        v_puntaje NUMBER;
+    BEGIN
+        SELECT
+            ptje_pueblo_ind
+        INTO v_puntaje
+        FROM
+            ptje_pueblo_indigena
+        WHERE
+            cod_pueblo_ind = p_zona;
+
+        RETURN v_puntaje;
+    EXCEPTION
+        WHEN no_data_found THEN
+            INSERT INTO error_proceso (
+                numrun,
+                rutina_error,
+                mensaje_error
+            ) VALUES (
+                2012536 - 3,
+                'Error en fn_obtener_puntaje_pueblo',
+                'No se encontró la zona: ' || p_zona
+            );
+
+            RETURN 0;
+        WHEN OTHERS THEN
+            INSERT INTO error_proceso (
+                numrun,
+                rutina_error,
+                mensaje_error
+            ) VALUES (
+                2012536 - 3,
+                'Error en fn_obtener_puntaje_pueblo',
+                'No se encontró la zona: ' || p_zona
+            );
+
+            RETURN 0;
+    END fn_obtener_puntaje_pueblo;
+
+    FUNCTION fn_obtener_puntaje_experiencia (
+        p_postulante_id NUMBER
+    ) RETURN NUMBER IS
+        v_puntaje_annos NUMBER;
+    BEGIN
+        SELECT
+            ptje_experiencia
+        INTO v_puntaje_annos
+        FROM
+            ptje_annos_experiencia
+        WHERE
+            ptje_experiencia = p_postulante_id;
+
+        v_puntaje_annos := trunc(months_between(rango_annos_ini, rango_annos_ter) / 12);
+        RETURN v_puntaje_annos;
+    EXCEPTION
+        WHEN no_data_found THEN
+            INSERT INTO error_proceso (
+                numrun,
+                rutina_error,
+                mensaje_error
+            ) VALUES (
+                2012536 - 3,
+                'Error en fn_obtener_puntaje_pueblo',
+                'No se encontró la zona: ' || p_zona
+            );
+            RETURN 0;
+            
+        WHEN OTHERS THEN
+            INSERT INTO error_proceso (
+                numrun,
+                rutina_error,
+                mensaje_error
+            ) VALUES (
+                2012536 - 3,
+                'Error en fn_obtener_puntaje_pueblo',
+                'No se encontró la zona: ' || p_zona
+            );
+            RETURN 0;
+    END fn_obtener_puntaje_experiencia;
+    
+--INTENTO DE TRIGGER
+
+    CREATE TRIGGER tr_generar_resultado_postulacion
+    AFTER INSERT ON DETALLE_PUNTAJE_POSTULACION
+    FOR EACH ROW
+    DECLARE
+        v_puntaje_final NUMBER;
+        v_seleccionado VARCHAR(30);
+    BEGIN
+        
+        -- Calcular el puntaje final sumando los puntajes especificados en las reglas de negocio
+        --AQUI SE INGRESA LA SUMA DE LAS VARIABLES DE LAS FUNCIONES PERO NOSE COMO HACERLO
+        SET v_puntaje_final = NEW.puntaje1 + NEW.puntaje2 + NEW.puntaje3 + NEW.puntaje4 + NEW.puntaje5 + NEW.puntaje6;
+        
+        -- Determinar si el postulante fue seleccionado o no
+        IF v_puntaje_final >= 3000 THEN
+            SET v_seleccionado = 'SELECCIONADO';
+        ELSE
+            SET v_seleccionado = 'NO SELECCIONADO';
+        END IF;
+        
+        -- Insertar los datos en la tabla RESULTADO_POSTULACION
+        INSERT INTO RESULTADO_POSTULACION (RUN_POSTULANTE, PTJE_FINAL_POST, RESULTADO_POST)
+        VALUES (NEW.run_postulante, v_puntaje_final, v_seleccionado);
+    END;
+    
+--CREACION DE PROCEDIMIENTO
+CREATE OR REPLACE PROCEDURE p_datos_postulacion (fecha_proceso DATE, puntaje_extra NUMBER, p_puntaje_extra_2 NUMBER) AS
+BEGIN
+EXECUTE IMMEDIATE 'TRUNCATE TABLE DETALLE_PUNTAJE_POSTULACION';
+EXECUTE IMMEDIATE 'TRUNCATE TABLE ERROR_PROCESO';
+EXECUTE IMMEDIATE 'TRUNCATE TABLE RESULTADO_POSTULACION';
+
+FOR reg_postulantes in cur_postulantes LOOP
+
+END LOOP;
+
+END;
+
+
